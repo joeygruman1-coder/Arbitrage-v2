@@ -1,0 +1,13 @@
+{
+  "name": "market-twin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Find equivalent prediction markets on Polymarket and Kalshi.",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=18" }
+}
