@@ -11,10 +11,11 @@ function render() {
     : category === 'profitable' ? b.bestRoute.profit - a.bestRoute.profit : b.score - a.score);
   const list = document.querySelector('#match-list');
   if (!visible.length) { list.innerHTML = '<div class="empty"><b>No pairs in this category yet.</b><p>The scanner keeps looking automatically. Matching exact contract rules is intentionally conservative.</p></div>'; return; }
-  list.innerHTML = visible.map((match, index) => `<article class="match-card ${match.category}" style="--delay:${Math.min(index * 35, 250)}ms">
+  const displayed = visible.slice(0, 100);
+  list.innerHTML = `${visible.length > displayed.length ? `<div class="result-limit">Showing the first 100 of ${visible.length} results. Use a category or volume sort to narrow the list.</div>` : ''}${displayed.map((match, index) => `<article class="match-card ${match.category}" style="--delay:${Math.min(index * 35, 250)}ms">
     <div class="confidence"><div class="ring" style="--score:${Math.round(match.score * 100)}"><span>${Math.round(match.score * 100)}%</span></div><small>match<br>confidence</small></div>
     <div><div class="pair">${market(match.polymarket, 'poly', 'Polymarket')}<div class="link-line"><span>⇄</span></div>${market(match.kalshi, 'kalshi', 'Kalshi')}</div>${routePanel(match)}</div>
-  </article>`).join('');
+  </article>`).join('')}`;
 }
 
 function market(item, type, label) {
@@ -38,9 +39,9 @@ async function load() {
   try {
     const response = await fetch('/api/markets'); if (!response.ok) throw new Error('Scanner did not respond'); const data = await response.json();
     matches = data.matches || []; counts(); render();
-    document.querySelector('#poly-count').textContent = compact.format(data.polymarket?.length || data.scan?.polymarket || 0);
-    document.querySelector('#kalshi-count').textContent = compact.format(data.kalshi?.length || data.scan?.kalshi || 0);
-    document.querySelector('#match-count').textContent = matches.length;
+    document.querySelector('#poly-count').textContent = compact.format(data.counts?.polymarket || data.scan?.polymarket || 0);
+    document.querySelector('#kalshi-count').textContent = compact.format(data.counts?.kalshi || data.scan?.kalshi || 0);
+    document.querySelector('#match-count').textContent = data.counts?.matches ?? matches.length;
     document.querySelector('#updated').textContent = data.scan?.active ? `${data.scan.phase} · ${(data.scan.polymarket || 0) + (data.scan.kalshi || 0)} downloaded` : `Last full scan ${new Date(data.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     const notice = document.querySelector('#notice'); notice.classList.toggle('hidden', !data.errors?.length); notice.textContent = data.errors?.join(' · ') || '';
     clearTimeout(pollTimer); pollTimer = setTimeout(load, data.scan?.active ? 3000 : 30000);

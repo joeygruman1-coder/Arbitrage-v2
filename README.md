@@ -69,6 +69,14 @@ The `.gitignore` file prevents `.env` from being committed. If a key is ever exp
 4. When `OPENAI_API_KEY` is present, the strongest 80 candidates receive a conservative AI review that checks the event, subject, threshold, direction, time window, and settlement meaning.
 5. Both guaranteed-payout combinations are priced: **Kalshi YES + Polymarket NO** and **Kalshi NO + Polymarket YES**.
 
+### Efficiency safeguards
+
+- Polymarket pages are downloaded five at a time; Kalshi remains cursor-sequential because each page supplies the token required for the next one.
+- IDs are deduplicated before matching, transient requests use bounded retries, and a scan cannot overlap another scan.
+- The browser receives counts and matched pairs—not the tens of thousands of full source records held by the scanner.
+- The dashboard renders at most 100 cards at once while category counts continue to cover the complete result set.
+- Change `POLYMARKET_CONCURRENCY` in `.env` only if the API or hosting environment requires a lower request rate.
+
 ## The three price categories
 
 Every equivalent binary pair has two opposite-outcome routes. Buying one contract on each side guarantees a gross $1 payout if—and only if—the contracts truly have identical settlement rules.
@@ -91,7 +99,7 @@ Confidence is a research aid, not proof. Exchange resolution rules can differ ev
 
 ## Project map
 
-- `server.js` — local web server, exchange API adapters, caching, and optional AI review
+- `server.js` — local web server, paginated background scanner, API adapters, and optional AI review
 - `matcher.js` — fast first-pass candidate scoring
 - `public/` — dashboard HTML, CSS, and browser JavaScript
 - `test/` — automated matcher tests

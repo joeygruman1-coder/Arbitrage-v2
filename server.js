@@ -9,6 +9,7 @@ const PUBLIC_DIR = join(process.cwd(), 'public');
 const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS || 2 * 60 * 1000);
 const MAX_POLYMARKET_PAGES = Number(process.env.MAX_POLYMARKET_PAGES || 500);
 const MAX_KALSHI_PAGES = Number(process.env.MAX_KALSHI_PAGES || 100);
+const POLYMARKET_CONCURRENCY = Math.max(1, Number(process.env.POLYMARKET_CONCURRENCY || 5));
 
 let snapshot = { polymarket: [], kalshi: [], matches: [], errors: [], updatedAt: null, scan: { active: true, phase: 'Starting scanner', pages: 0 } };
 let scanPromise = null;
@@ -62,13 +63,20 @@ async function fetchJson(url, attempts = 3) {
 async function fetchAllPolymarket() {
   // Gamma currently caps a page at 100 even when a larger limit is requested.
   const markets = []; const limit = 100;
-  for (let page = 0; page < MAX_POLYMARKET_PAGES; page++) {
+  for (let page = 0; page < MAX_POLYMARKET_PAGES; page += POLYMARKET_CONCURRENCY) {
+    const pageNumbers = Array.from(
+      { length: Math.min(POLYMARKET_CONCURRENCY, MAX_POLYMARKET_PAGES - page) },
+      (_, index) => page + index
+    );
     snapshot.scan = { active: true, phase: 'Downloading Polymarket', pages: page + 1, polymarket: markets.length, kalshi: snapshot.scan.kalshi || 0 };
-    const batch = await fetchJson(`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=${limit}&offset=${page * limit}`);
-    markets.push(...batch);
-    if (batch.length < limit) break;
+    const batches = await Promise.all(pageNumbers.map((pageNumber) => fetchJson(
+      `https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=${limit}&offset=${pageNumber * limit}`
+    )));
+    for (const batch of batches) markets.push(...batch);
+    if (batches.some((batch) => batch.length < limit)) break;
   }
-  return markets.map(mapPolymarket).filter((market) => market.title && market.yesAsk > 0 && market.noAsk > 0);
+  const unique = new Map(markets.map((market) => [String(market.id || market.conditionId), market]));
+  return [...unique.values()].map(mapPolymarket).filter((market) => market.title && market.yesAsk > 0 && market.noAsk > 0);
 }
 
 async function fetchAllKalshi() {
@@ -105,7 +113,7 @@ async function reviewWithAI(matches) {
 async function runScan() {
   if (scanPromise) return scanPromise;
   scanPromise = (async () => {
-    const startedAt = new Date().toISOString(); const errors = [];
+    const started = Date.now(); const startedAt = new Date(started).toISOString(); const errors = [];
     try {
       const [polyResult, kalshiResult] = await Promise.allSettled([fetchAllPolymarket(), fetchAllKalshi()]);
       const polymarket = polyResult.status === 'fulfilled' ? polyResult.value : snapshot.polymarket;
@@ -116,7 +124,7 @@ async function runScan() {
       let matching = { matches: findMatches(polymarket, kalshi), aiEnabled: false };
       try { matching = await reviewWithAI(matching.matches); } catch (error) { errors.push(`AI: ${error.message}`); }
       const matches = matching.matches.map(analyzePair);
-      snapshot = { polymarket, kalshi, matches, aiEnabled: matching.aiEnabled, errors, updatedAt: new Date().toISOString(), scan: { active: false, phase: 'Waiting for next scan', startedAt, nextAt: new Date(Date.now() + SCAN_INTERVAL_MS).toISOString(), polymarket: polymarket.length, kalshi: kalshi.length } };
+      snapshot = { polymarket, kalshi, matches, aiEnabled: matching.aiEnabled, errors, updatedAt: new Date().toISOString(), scan: { active: false, phase: 'Waiting for next scan', startedAt, durationMs: Date.now() - started, nextAt: new Date(Date.now() + SCAN_INTERVAL_MS).toISOString(), polymarket: polymarket.length, kalshi: kalshi.length } };
     } catch (error) { errors.push(error.message); snapshot = { ...snapshot, errors, scan: { active: false, phase: 'Scan failed; retry scheduled', nextAt: new Date(Date.now() + SCAN_INTERVAL_MS).toISOString() } }; }
     finally { scanPromise = null; }
     return snapshot;
@@ -127,11 +135,20 @@ async function runScan() {
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); };
 const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
 
+function clientSnapshot() {
+  return {
+    counts: { polymarket: snapshot.polymarket.length, kalshi: snapshot.kalshi.length, matches: snapshot.matches.length },
+    matches: snapshot.matches, aiEnabled: snapshot.aiEnabled, errors: snapshot.errors,
+    updatedAt: snapshot.updatedAt, scan: snapshot.scan
+  };
+}
+
 createServer(async (req, res) => {
   try {
     if (req.url === '/api/markets') {
       if (!snapshot.updatedAt && scanPromise) await Promise.race([scanPromise, new Promise((resolve) => setTimeout(resolve, 12000))]);
-      return json(res, 200, snapshot);
+      // Do not send tens of thousands of source records to every polling browser.
+      return json(res, 200, clientSnapshot());
     }
     if (req.url === '/api/scan' && req.method === 'POST') { runScan(); return json(res, 202, { started: true }); }
     const requested = req.url === '/' ? 'index.html' : req.url.split('?')[0].slice(1);
