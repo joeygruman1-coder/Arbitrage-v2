@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Automatically discover equivalent prediction markets.">
+  <title>Market Twin — Prediction market matcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/"><span class="brand-mark">M</span><span>Market Twin</span></a>
+    <nav><a href="#matches">Matches</a><a href="#how">How it works</a></nav>
+    <span class="live"><i></i> Live markets</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Prediction market intelligence</div>
+      <h1>One event.<br><em>Two markets.</em></h1>
+      <p>We continuously scan the full open catalogs across Polymarket and Kalshi, link equivalent outcomes, and classify both possible hedge routes after estimated fees.</p>
+      <div class="hero-actions"><a class="button" href="#matches">Explore matches <span>→</span></a><span class="updated" id="updated">Fetching live markets…</span></div>
+      <div class="orb orb-one"></div><div class="orb orb-two"></div>
+    </section>
+
+    <section class="stats" aria-label="Market summary">
+      <div><span id="poly-count">—</span><small>Polymarket<br>markets scanned</small></div>
+      <div><span id="kalshi-count">—</span><small>Kalshi<br>markets scanned</small></div>
+      <div><span id="match-count">—</span><small>Potential<br>twins found</small></div>
+    </section>
+
+    <section class="matches" id="matches">
+      <div class="section-head"><div><span class="kicker">Discovery feed</span><h2>Potential market twins</h2></div><button id="refresh">↻ &nbsp;Refresh data</button></div>
+      <div class="notice hidden" id="notice"></div>
+      <div class="filters">
+        <button class="category active" data-category="all">All pricing states</button>
+        <button class="category" data-category="overpriced">Over $1</button>
+        <button class="category" data-category="fee_blocked">Under $1, fee blocked</button>
+        <button class="category" data-category="profitable">Profitable</button>
+        <button class="filter active" data-min="0">All matches</button>
+        <button class="filter" data-min="0.5">Strong matches</button>
+        <label>Sort by <select id="sort"><option value="confidence">Confidence</option><option value="volume">Volume</option></select></label>
+      </div>
+      <div id="match-list" class="match-list"><div class="loading"><span></span><p>Comparing market language and outcomes…</p></div></div>
+    </section>
+
+    <section class="how" id="how">
+      <span class="kicker">Under the hood</span><h2>From noise to signal.</h2>
+      <div class="steps">
+        <article><b>01</b><h3>Collect</h3><p>A continuous background scanner paginates through the complete open catalog on each exchange.</p></article>
+        <article><b>02</b><h3>Compare</h3><p>Our matcher normalizes titles, important numbers, entities and categories.</p></article>
+        <article><b>03</b><h3>Review</h3><p>Likely equivalents are ranked for human review before any arbitrage tracking.</p></article>
+      </div>
+    </section>
+  </main>
+  <footer><span>Market Twin</span><p>Research tool only. Not financial advice.</p></footer>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
