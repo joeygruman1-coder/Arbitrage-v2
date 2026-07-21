@@ -23,3 +23,27 @@ test('keeps the best matches first and respects the limit', () => {
   assert.equal(result.length, 1);
   assert.equal(result[0].kalshi.id, 'k1');
 });
+
+test('does not score catalog entries with no shared meaningful keyword', () => {
+  const polymarket = [{ title: 'Will inflation fall below 2% in 2027?' }];
+  const kalshi = Array.from({ length: 5000 }, (_, index) => ({ title: `Movie ${index} wins an award` }));
+  kalshi.push({ title: 'Will inflation be below 2 percent in 2027?' });
+
+  const matches = findMatches(polymarket, kalshi, 10);
+  assert.equal(matches.length, 1);
+  assert.match(matches[0].kalshi.title, /inflation/);
+});
+
+test('matches equivalent titles despite exchange-specific wording', () => {
+  const polymarket = [{ title: 'Will the Federal Reserve cut rates in September 2026?' }];
+  const kalshi = [
+    { id: 'wrong', title: 'Will inflation be above 3% in September 2026?' },
+    { id: 'right', title: 'Fed interest rate cut in September 2026?' }
+  ];
+
+  const matches = findMatches(polymarket, kalshi, 10);
+
+  assert.ok(matches.length > 0);
+  assert.equal(matches[0].kalshi.id, 'right');
+  assert.ok(matches[0].score > matches[1].score);
+});
