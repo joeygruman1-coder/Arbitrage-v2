@@ -1,9 +1,9 @@
 {
   "name": "market-twin",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
-  "description": "Find equivalent prediction markets on Polymarket and Kalshi.",
+  "description": "Guarded high-recall Kalshi and Polymarket US matcher.",
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
