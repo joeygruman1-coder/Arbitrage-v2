@@ -23,3 +23,13 @@ test('keeps the best matches first and respects the limit', () => {
   assert.equal(result.length, 1);
   assert.equal(result[0].kalshi.id, 'k1');
 });
+
+test('does not score catalog entries with no shared meaningful keyword', () => {
+  const polymarket = [{ title: 'Will inflation fall below 2% in 2027?' }];
+  const kalshi = Array.from({ length: 5000 }, (_, index) => ({ title: `Movie ${index} wins an award` }));
+  kalshi.push({ title: 'Will inflation be below 2 percent in 2027?' });
+
+  const matches = findMatches(polymarket, kalshi, 10);
+  assert.equal(matches.length, 1);
+  assert.match(matches[0].kalshi.title, /inflation/);
+});

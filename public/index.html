@@ -21,7 +21,7 @@
     <section class="hero">
       <div class="eyebrow">Prediction market intelligence</div>
       <h1>One event.<br><em>Two markets.</em></h1>
-      <p>We scan popular markets across Polymarket and Kalshi, then surface the ones that appear to be talking about the same outcome.</p>
+      <p>We continuously scan the full open catalogs across Polymarket and Kalshi, link equivalent outcomes, and classify both possible hedge routes after estimated fees.</p>
       <div class="hero-actions"><a class="button" href="#matches">Explore matches <span>→</span></a><span class="updated" id="updated">Fetching live markets…</span></div>
       <div class="orb orb-one"></div><div class="orb orb-two"></div>
     </section>
@@ -36,6 +36,10 @@
       <div class="section-head"><div><span class="kicker">Discovery feed</span><h2>Potential market twins</h2></div><button id="refresh">↻ &nbsp;Refresh data</button></div>
       <div class="notice hidden" id="notice"></div>
       <div class="filters">
+        <button class="category active" data-category="all">All pricing states</button>
+        <button class="category" data-category="overpriced">Over $1</button>
+        <button class="category" data-category="fee_blocked">Under $1, fee blocked</button>
+        <button class="category" data-category="profitable">Profitable</button>
         <button class="filter active" data-min="0">All matches</button>
         <button class="filter" data-min="0.5">Strong matches</button>
         <label>Sort by <select id="sort"><option value="confidence">Confidence</option><option value="volume">Volume</option></select></label>
@@ -46,7 +50,7 @@
     <section class="how" id="how">
       <span class="kicker">Under the hood</span><h2>From noise to signal.</h2>
       <div class="steps">
-        <article><b>01</b><h3>Collect</h3><p>Public APIs bring in the 100 most active open markets from each exchange.</p></article>
+        <article><b>01</b><h3>Collect</h3><p>A continuous background scanner paginates through the complete open catalog on each exchange.</p></article>
         <article><b>02</b><h3>Compare</h3><p>Our matcher normalizes titles, important numbers, entities and categories.</p></article>
         <article><b>03</b><h3>Review</h3><p>Likely equivalents are ranked for human review before any arbitrage tracking.</p></article>
       </div>

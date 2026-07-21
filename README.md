@@ -1,6 +1,6 @@
 # Market Twin
 
-Market Twin downloads popular open markets from **Polymarket** and **Kalshi**, compares every possible pair, and ranks likely equivalents in a local web dashboard. It is the first building block for a future arbitrage tracker—it does **not** place trades.
+Market Twin continuously paginates through open markets from **Polymarket** and **Kalshi**, uses a keyword index to rank likely equivalents, and displays them in a local web dashboard. It evaluates both complementary hedge directions and separates pairs into over-$1, fee-blocked, and profitable-after-estimated-fees categories. It does **not** place trades.
 
 ## Start here (no coding experience required)
 
