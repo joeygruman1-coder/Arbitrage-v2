@@ -1,76 +1,50 @@
-let matches = [];
-let minimum = 0;
-let category = 'all';
+let links = [];
+const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
+const volume = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
-const money = new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'USD', maximumFractionDigits: 1 });
-const escapeHtml = (text = '') => String(text).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
-
-function price(value) { return value ? `${Math.round(value * 100)}¢` : '—'; }
-
-function render() {
-  const sort = document.querySelector('#sort').value;
-  const visible = matches.filter((match) => match.score >= minimum && (category === 'all' || match.arbitrage?.category === category)).sort((a, b) => sort === 'volume'
-    ? (b.polymarket.volume + b.kalshi.volume) - (a.polymarket.volume + a.kalshi.volume)
-    : b.score - a.score);
-  const list = document.querySelector('#match-list');
-  if (!visible.length) {
-    list.innerHTML = '<div class="empty"><b>No matches cleared this filter.</b><p>Try “All matches” or refresh as new markets open.</p></div>';
-    return;
-  }
-  list.innerHTML = visible.map((match, index) => {
-    const confidence = Math.round(match.score * 100);
-    const arb = match.arbitrage || {};
-    const arbLabel = { profitable: 'Profitable after fees', fee_blocked: 'Under $1, fees remove profit', overpriced: 'Over $1', unpriced: 'Quotes unavailable' }[arb.category] || 'Quotes unavailable';
-    return `<article class="match-card" style="--delay:${Math.min(index * 45, 300)}ms">
-      <div class="confidence"><div class="ring" style="--score:${confidence}"><span>${confidence}%</span></div><small>match<br>confidence</small></div>
-      <div class="pair">
-        ${market(match.polymarket, 'poly', 'Polymarket')}
-        <div class="link-line"><span>⇄</span></div>
-        ${market(match.kalshi, 'kalshi', 'Kalshi')}
-        <div class="arb-summary"><b>${arbLabel}</b><span>${escapeHtml(arb.direction || '')}</span><span>Net cost ${price(arb.netCost)} · Profit ${price(arb.profit)}</span></div>
-      </div>
-    </article>`;
-  }).join('');
-}
-
-function market(item, type, label) {
-  return `<a class="market" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">
-    <div class="market-top"><span class="exchange ${type}"><i></i>${label}</span><span class="external">↗</span></div>
-    <h3>${escapeHtml(item.title)}</h3>
-    <div class="market-meta"><span><small>YES ASK</small>${price(item.yesAsk)}</span><span><small>NO ASK</small>${price(item.noAsk)}</span><span><small>24H VOLUME</small>${money.format(item.volume)}</span></div>
+function marketCard(market, exchange) {
+  return `<a class="market" href="${escapeHtml(market.url)}" target="_blank" rel="noopener noreferrer">
+    <div class="source ${exchange.toLowerCase()}"><i></i>${exchange}<span>OPEN ↗</span></div>
+    <h3>${escapeHtml(market.title)}</h3>
+    <p>${market.closeTime ? `Closes ${new Date(market.closeTime).toLocaleDateString()}` : 'Close date unavailable'} · ${volume.format(market.volume || 0)} volume</p>
   </a>`;
 }
 
-async function load() {
-  const button = document.querySelector('#refresh');
-  button.disabled = true; button.textContent = '↻  Scanning…';
-  try {
-    const response = await fetch('/api/markets');
-    if (!response.ok) throw new Error('The market feed did not respond.');
-    const data = await response.json();
-    matches = data.matches;
-    document.querySelector('#poly-count').textContent = data.counts.polymarket;
-    document.querySelector('#kalshi-count').textContent = data.counts.kalshi;
-    document.querySelector('#match-count').textContent = matches.length;
-    document.querySelector('#updated').textContent = `Updated ${new Date(data.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-    const notice = document.querySelector('#notice');
-    notice.classList.toggle('hidden', !data.errors.length);
-    notice.textContent = data.errors.length ? `One source is temporarily unavailable: ${data.errors.join(' · ')}` : '';
-    render();
-  } catch (error) {
-    document.querySelector('#match-list').innerHTML = `<div class="empty"><b>We couldn't load live markets.</b><p>${escapeHtml(error.message)} Check your internet connection, then try again.</p></div>`;
-  } finally { button.disabled = false; button.textContent = '↻  Refresh data'; }
+function render() {
+  const filter = document.querySelector('#confidence').value;
+  const visible = links.filter((link) => filter === 'all' || link.status === filter);
+  document.querySelector('#links').innerHTML = visible.length ? visible.map((link) => `<article class="link-card">
+    <div class="score"><strong>${link.confidence}%</strong><span>${link.status === 'high' ? 'HIGH CONFIDENCE' : 'REVIEW'}</span></div>
+    <div class="pair">${marketCard(link.polymarket, 'Polymarket')}<div class="connector"><span>↔</span></div>${marketCard(link.kalshi, 'Kalshi')}</div>
+    <p class="reason">Why it was linked: ${escapeHtml(link.explanation)}</p>
+  </article>`).join('') : '<div class="empty">No links match this filter yet.</div>';
 }
 
-document.querySelectorAll('.filter').forEach((button) => button.addEventListener('click', () => {
-  document.querySelectorAll('.filter').forEach((item) => item.classList.remove('active'));
-  button.classList.add('active'); minimum = Number(button.dataset.min); render();
-}));
-document.querySelectorAll('.category').forEach((button) => button.addEventListener('click', () => {
-  document.querySelectorAll('.category').forEach((item) => item.classList.remove('active'));
-  button.classList.add('active'); category = button.dataset.category; render();
-}));
-document.querySelector('#sort').addEventListener('change', render);
-document.querySelector('#refresh').addEventListener('click', async () => { await fetch('/api/scan', { method: 'POST' }); setTimeout(load, 1000); });
+async function load() {
+  try {
+    const response = await fetch('/api/links');
+    if (!response.ok) throw new Error('The local server did not respond.');
+    const data = await response.json();
+    links = data.links || [];
+    document.querySelector('#poly-count').textContent = data.counts.polymarket.toLocaleString();
+    document.querySelector('#kalshi-count').textContent = data.counts.kalshi.toLocaleString();
+    document.querySelector('#link-count').textContent = links.length.toLocaleString();
+    document.querySelector('#status').textContent = data.scanning ? 'Scanning all open markets…' : data.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleTimeString()}` : 'Waiting for first scan…';
+    const notice = document.querySelector('#notice');
+    notice.classList.toggle('hidden', !data.errors?.length);
+    notice.textContent = data.errors?.length ? `A source could not be read: ${data.errors.join(' · ')}` : '';
+    render();
+  } catch (error) {
+    document.querySelector('#links').innerHTML = `<div class="empty">${escapeHtml(error.message)} Try refreshing this page.</div>`;
+  }
+}
+
+document.querySelector('#confidence').addEventListener('change', render);
+document.querySelector('#scan').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  await fetch('/api/scan', { method: 'POST' });
+  await load();
+  setTimeout(() => { event.currentTarget.disabled = false; load(); }, 2500);
+});
 load();
-setInterval(load, 30000);
+setInterval(load, 5000);

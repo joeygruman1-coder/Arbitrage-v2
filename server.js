@@ -1,88 +1,148 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize as normalizePath } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { findMatches } from './matcher.js';
-import { analyzePair } from './arbitrage.js';
 
 const PORT = Number(process.env.PORT || 3000);
+const SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.SCAN_INTERVAL_MS || 300_000));
 const PUBLIC_DIR = join(process.cwd(), 'public');
-const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS || 120000);
-const POLYMARKET_CONCURRENCY = Math.max(1, Number(process.env.POLYMARKET_CONCURRENCY || 5));
-const MAX_POLYMARKET_PAGES = Number(process.env.MAX_POLYMARKET_PAGES || 500);
-const MAX_KALSHI_PAGES = Number(process.env.MAX_KALSHI_PAGES || 100);
-let snapshot = { matches: [], counts: { polymarket: 0, kalshi: 0 }, errors: [], updatedAt: null, scan: { active: false, phase: 'Waiting' } };
-let scanPromise;
+const POLY_PAGE_LIMIT = 100;
+const KALSHI_PAGE_LIMIT = 1000;
+let scanInProgress = null;
+let snapshot = { links: [], counts: { polymarket: 0, kalshi: 0, candidates: 0 }, updatedAt: null, scanning: false, errors: [] };
 
-const number = (...values) => { for (const value of values) { const parsed = Number(value); if (Number.isFinite(parsed)) return parsed; } return 0; };
-const parseJson = (value, fallback = []) => { if (Array.isArray(value)) return value; try { return JSON.parse(value); } catch { return fallback; } };
+async function reviewWithAi(links) {
+  if (!process.env.OPENAI_API_KEY || !links.length) return links;
+  const reviewable = links.slice(0, 30);
+  const input = reviewable.map((link, index) => ({
+    index, polymarket: { title: link.polymarket.title, rules: link.polymarket.description },
+    kalshi: { title: link.kalshi.title, rules: link.kalshi.description },
+  }));
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST', signal: AbortSignal.timeout(60_000),
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+      instructions: 'Conservatively decide whether each pair is the same binary proposition. Dates, thresholds, subjects, outcome direction, and resolution conditions must agree. Return JSON only: {"reviews":[{"index":0,"equivalent":true,"reason":"short reason"}]}.',
+      input: JSON.stringify(input), text: { format: { type: 'json_object' } },
+    }),
+  });
+  if (!response.ok) throw new Error(`OpenAI: ${response.status} ${response.statusText}`);
+  const payload = await response.json();
+  const outputText = payload.output_text || payload.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
+  const reviews = JSON.parse(outputText).reviews || [];
+  const byIndex = new Map(reviews.map((review) => [review.index, review]));
+  return links.filter((link, index) => {
+    if (index >= reviewable.length) return true;
+    const review = byIndex.get(index);
+    if (!review?.equivalent) return false;
+    link.aiReviewed = true;
+    link.explanation = `AI review: ${review.reason}`;
+    return true;
+  });
+}
+
+async function getJson(url) {
+  const response = await fetch(url, { headers: { 'User-Agent': 'Market-Linker/1.0' }, signal: AbortSignal.timeout(25_000) });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+const amount = (...values) => {
+  for (const value of values) { const parsed = Number(value); if (Number.isFinite(parsed)) return parsed; }
+  return 0;
+};
 
 function mapPolymarket(market) {
-  const prices = parseJson(market.outcomePrices).map(Number);
-  const yesAsk = number(market.bestAsk, prices[0]);
-  const noAsk = market.bestBid != null ? 1 - number(market.bestBid) : number(prices[1], 1 - yesAsk);
-  return { id: String(market.id || market.conditionId), title: market.question || market.title, subtitle: market.description?.slice(0, 300) || '', category: market.category || '', volume: number(market.volume24hr, market.volumeNum, market.volume), yesAsk, noAsk, feesEnabled: Boolean(market.feesEnabled), endDate: market.endDate || null, url: market.slug ? `https://polymarket.com/event/${market.slug}` : 'https://polymarket.com' };
+  return {
+    id: String(market.conditionId || market.id), title: market.question || market.title,
+    description: market.description || '', category: market.category || '',
+    closeTime: market.endDate || null, volume: amount(market.volume24hr, market.volumeNum, market.volume),
+    url: market.slug ? `https://polymarket.com/event/${market.slug}` : 'https://polymarket.com',
+  };
 }
+
 function mapKalshi(market) {
-  return { id: market.ticker, title: market.title, subtitle: market.subtitle || market.yes_sub_title || '', category: market.category || '', volume: number(market.volume_24h, market.volume), yesAsk: number(market.yes_ask, market.yes_ask_dollars) / (market.yes_ask_dollars ? 1 : 100), noAsk: number(market.no_ask, market.no_ask_dollars) / (market.no_ask_dollars ? 1 : 100), endDate: market.close_time || market.expiration_time || null, url: `https://kalshi.com/markets/${encodeURIComponent(market.event_ticker || market.ticker)}` };
+  return {
+    id: market.ticker, title: market.title, description: [market.subtitle, market.yes_sub_title].filter(Boolean).join(' — '),
+    category: market.category || '', closeTime: market.close_time || market.expiration_time || null,
+    volume: amount(market.volume_24h, market.volume), url: `https://kalshi.com/markets/${encodeURIComponent(market.event_ticker || market.ticker)}`,
+  };
 }
-async function fetchJson(url, attempt = 0) {
-  try {
-    const response = await fetch(url, { headers: { 'User-Agent': 'MarketTwin/2.0' }, signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw new Error(`${response.status} from ${new URL(url).hostname}`);
-    return await response.json();
-  } catch (error) {
-    if (attempt >= 2) throw error;
-    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
-    return fetchJson(url, attempt + 1);
-  }
-}
+
 async function fetchPolymarket() {
-  const all = [];
-  for (let start = 0; start < MAX_POLYMARKET_PAGES; start += POLYMARKET_CONCURRENCY) {
-    snapshot.scan = { active: true, phase: `Polymarket pages ${start + 1}–${start + POLYMARKET_CONCURRENCY}` };
-    const pages = await Promise.all(Array.from({ length: POLYMARKET_CONCURRENCY }, (_, index) => fetchJson(`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=100&offset=${(start + index) * 100}`)));
-    pages.forEach((page) => all.push(...page));
-    if (pages.some((page) => page.length < 100)) break;
+  const markets = [];
+  for (let offset = 0; ; offset += POLY_PAGE_LIMIT) {
+    const page = await getJson(`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=${POLY_PAGE_LIMIT}&offset=${offset}`);
+    markets.push(...page);
+    if (page.length < POLY_PAGE_LIMIT) break;
   }
-  return [...new Map(all.map((market) => [market.id || market.conditionId, market])).values()].map(mapPolymarket);
+  return [...new Map(markets.map((market) => [market.conditionId || market.id, market])).values()].map(mapPolymarket);
 }
+
 async function fetchKalshi() {
-  const all = []; let cursor = '';
-  for (let page = 0; page < MAX_KALSHI_PAGES; page += 1) {
-    snapshot.scan = { active: true, phase: `Kalshi page ${page + 1}` };
-    const query = new URLSearchParams({ status: 'open', limit: '1000', mve_filter: 'exclude' });
+  const markets = [];
+  let cursor = '';
+  do {
+    const query = new URLSearchParams({ status: 'open', limit: String(KALSHI_PAGE_LIMIT), mve_filter: 'exclude' });
     if (cursor) query.set('cursor', cursor);
-    const payload = await fetchJson(`https://api.elections.kalshi.com/trade-api/v2/markets?${query}`);
-    all.push(...(payload.markets || [])); cursor = payload.cursor || '';
-    if (!cursor) break;
-  }
-  return [...new Map(all.map((market) => [market.ticker, market])).values()].map(mapKalshi);
+    const page = await getJson(`https://api.elections.kalshi.com/trade-api/v2/markets?${query}`);
+    markets.push(...(page.markets || []));
+    cursor = page.cursor || '';
+  } while (cursor);
+  return [...new Map(markets.map((market) => [market.ticker, market])).values()].map(mapKalshi);
 }
-async function scan() {
-  if (scanPromise) return scanPromise;
-  scanPromise = (async () => {
-    const errors = [];
+
+export async function scanMarkets() {
+  if (scanInProgress) return scanInProgress;
+  snapshot = { ...snapshot, scanning: true, errors: [] };
+  scanInProgress = (async () => {
     const [polyResult, kalshiResult] = await Promise.allSettled([fetchPolymarket(), fetchKalshi()]);
+    const errors = [];
     const polymarket = polyResult.status === 'fulfilled' ? polyResult.value : [];
     const kalshi = kalshiResult.status === 'fulfilled' ? kalshiResult.value : [];
     if (polyResult.status === 'rejected') errors.push(`Polymarket: ${polyResult.reason.message}`);
     if (kalshiResult.status === 'rejected') errors.push(`Kalshi: ${kalshiResult.reason.message}`);
-    snapshot.scan = { active: true, phase: 'Matching catalogs' };
-    const matches = findMatches(polymarket, kalshi, 1000).map((match) => ({ ...match, arbitrage: analyzePair(match.polymarket, match.kalshi) }));
-    snapshot = { matches, counts: { polymarket: polymarket.length, kalshi: kalshi.length }, errors, updatedAt: new Date().toISOString(), scan: { active: false, phase: 'Complete' } };
+    const matched = findMatches(polymarket, kalshi);
+    let links = matched.links;
+    if (process.env.OPENAI_API_KEY) {
+      try { links = await reviewWithAi(links); } catch (error) { errors.push(error.message); }
+    }
+    snapshot = {
+      links, counts: { polymarket: polymarket.length, kalshi: kalshi.length, candidates: matched.candidateCount },
+      updatedAt: new Date().toISOString(), scanning: false, errors,
+    };
     return snapshot;
-  })().finally(() => { scanPromise = null; });
-  return scanPromise;
+  })().finally(() => { scanInProgress = null; });
+  return scanInProgress;
 }
 
-const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); };
-const mime = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
-createServer(async (req, res) => {
+const sendJson = (response, status, body) => {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  response.end(JSON.stringify(body));
+};
+const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
+
+if (process.env.NODE_ENV !== 'test') createServer(async (request, response) => {
   try {
-    if (req.url === '/api/markets') return json(res, 200, snapshot);
-    if (req.url === '/api/scan' && req.method === 'POST') { scan().catch(console.error); return json(res, 202, { started: true }); }
-    const requested = req.url === '/' ? 'index.html' : req.url.split('?')[0].slice(1);
-    const safePath = normalizePath(requested).replace(/^(\.\.(\/|\\|$))+/, '');
-    const body = await readFile(join(PUBLIC_DIR, safePath)); res.writeHead(200, { 'Content-Type': `${mime[extname(safePath)] || 'application/octet-stream'}; charset=utf-8` }); res.end(body);
-  } catch (error) { if (req.url?.startsWith('/api/')) return json(res, 502, { error: error.message }); res.writeHead(404); res.end('Not found'); }
-}).listen(PORT, () => { console.log(`Market Twin is running at http://localhost:${PORT}`); scan().catch(console.error); setInterval(() => scan().catch(console.error), SCAN_INTERVAL_MS).unref(); });
+    const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+    if (url.pathname === '/api/links' && request.method === 'GET') return sendJson(response, 200, snapshot);
+    if (url.pathname === '/api/scan' && request.method === 'POST') {
+      scanMarkets().catch(console.error);
+      return sendJson(response, 202, { started: true });
+    }
+    const requested = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+    const filePath = resolve(PUBLIC_DIR, requested);
+    if (!filePath.startsWith(`${resolve(PUBLIC_DIR)}${sep}`)) throw new Error('Invalid path');
+    const body = await readFile(filePath);
+    response.writeHead(200, { 'Content-Type': `${MIME[extname(filePath)] || 'application/octet-stream'}; charset=utf-8` });
+    response.end(body);
+  } catch (error) {
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Not found');
+  }
+}).listen(PORT, () => {
+  console.log(`Market Linker is running at http://localhost:${PORT}`);
+  scanMarkets().catch(console.error);
+  setInterval(() => scanMarkets().catch(console.error), SCAN_INTERVAL_MS).unref();
+});
