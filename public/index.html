@@ -3,45 +3,62 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Find equivalent Polymarket and Kalshi markets.">
-  <title>Market Linker</title>
+  <meta name="description" content="A live, read-only intelligence layer for equivalent Polymarket US and Kalshi contracts.">
+  <title>Crossmark — Prediction market intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="nav"><a class="logo" href="/"><span>↔</span> Market Linker</a><span class="read-only">Read-only research tool</span></header>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Crossmark home"><span class="brand-mark"><i></i><i></i></span><strong>CROSSMARK</strong><small>MARKET INTELLIGENCE</small></a>
+    <nav><a href="#opportunities">Matches</a><a href="#method">Method</a></nav>
+    <div class="live"><i></i><span>READ-ONLY</span></div>
+  </header>
+
   <main>
     <section class="hero">
-      <p class="eyebrow">POLYMARKET × KALSHI</p>
-      <h1>Find the same question<br>on two exchanges.</h1>
-      <p class="intro">The scanner reads every open market, creates a keyword shortlist, rejects conflicting numbers and directions, and links each market only once.</p>
-      <div class="actions"><button id="scan">Scan now</button><span id="status" aria-live="polite">Starting the first scan…</span></div>
+      <div class="hero-copy">
+        <p class="kicker"><span>01</span> CROSS-EXCHANGE DISCOVERY</p>
+        <h1>One outcome.<br><em>Two markets.</em></h1>
+        <p class="lede">Surface equivalent contracts across Polymarket US and Kalshi—then inspect the language, timing and implied probabilities side by side.</p>
+        <div class="hero-actions"><button id="scan"><span>Run live scan</span><b>↗</b></button><p id="status" aria-live="polite">Connecting to exchanges…</p></div>
+      </div>
+      <div class="radar" aria-hidden="true">
+        <div class="orbit orbit-one"><i></i></div><div class="orbit orbit-two"><i></i></div>
+        <div class="radar-center"><span>LIVE</span><strong>↗↙</strong><small>MARKET<br>CONVERGENCE</small></div>
+        <span class="radar-label label-a">POLYMARKET US</span><span class="radar-label label-b">KALSHI</span>
+      </div>
     </section>
 
-    <section class="metrics" aria-label="Scan totals">
-      <article><strong id="poly-count">—</strong><span>Polymarket markets</span></article>
-      <article><strong id="kalshi-count">—</strong><span>Kalshi markets</span></article>
-      <article><strong id="link-count">—</strong><span>one-to-one links</span></article>
+    <section class="source-strip" aria-label="Live source status">
+      <article><p><i id="poly-dot"></i> POLYMARKET US</p><strong id="poly-count">—</strong><span>OPEN CONTRACTS</span><small id="poly-state">CONNECTING</small></article>
+      <article><p><i id="kalshi-dot"></i> KALSHI</p><strong id="kalshi-count">—</strong><span>OPEN CONTRACTS</span><small id="kalshi-state">CONNECTING</small></article>
+      <article class="accent"><p>↗ MATCH ENGINE</p><strong id="link-count">—</strong><span>ONE-TO-ONE PAIRS</span><small>CONSERVATIVE FILTER</small></article>
+      <article><p>◇ CANDIDATE SET</p><strong id="candidate-count">—</strong><span>PAIRS COMPARED</span><small>DEDUPLICATED</small></article>
     </section>
 
-    <section class="results">
-      <div class="heading">
-        <div><p class="eyebrow">MATCH REVIEW</p><h2>Suggested links</h2></div>
-        <label>Confidence <select id="confidence"><option value="all">All suggestions</option><option value="high">High only</option><option value="review">Needs review</option></select></label>
+    <section class="results" id="opportunities">
+      <div class="section-head">
+        <div><p class="kicker"><span>02</span> LIVE OPPORTUNITIES</p><h2>Contract matches</h2></div>
+        <div class="controls"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search outcomes" aria-label="Search outcomes"></label><label><span>CONFIDENCE</span><select id="confidence"><option value="all">All matches</option><option value="high">High only</option><option value="review">Review</option></select></label></div>
       </div>
       <div id="notice" class="notice hidden"></div>
-      <div id="links" class="links"><div class="empty">Scanning the exchanges for the first time…</div></div>
+      <div class="table-labels"><span>FIT</span><span>CONTRACT PAIR</span><span>MARKET DATA</span></div>
+      <div id="links" class="links"><div class="empty"><span class="loader"></span><strong>Mapping both exchanges</strong><p>The first complete catalog scan can take a moment.</p></div></div>
     </section>
 
-    <section class="explain">
-      <p class="eyebrow">WHY THIS IS SAFE TO START WITH</p><h2>Matching first. Trading later.</h2>
-      <div class="steps">
-        <article><b>01</b><h3>Collect</h3><p>Public, read-only APIs provide the complete open market catalogs. No exchange login or trading key is needed.</p></article>
-        <article><b>02</b><h3>Compare</h3><p>Important words, names, dates, thresholds, percentages and directions are compared. Conflicts are discarded.</p></article>
-        <article><b>03</b><h3>Review</h3><p>Each exchange market appears in one pair at most. Open both contracts and verify their resolution rules before trusting a link.</p></article>
+    <section class="method" id="method">
+      <div><p class="kicker"><span>03</span> THE MATCHING LAYER</p><h2>Signal over<br><em>similarity.</em></h2></div>
+      <div class="method-grid">
+        <article><b>01 / INGEST</b><h3>Official market feeds</h3><p>Public, read-only endpoints ingest active Polymarket US contracts and Kalshi Trade API v2 markets with careful pagination and backoff.</p></article>
+        <article><b>02 / REJECT</b><h3>Conflicts first</h3><p>Opposing directions, thresholds, names and dates are rejected before a similarity score can create a match.</p></article>
+        <article><b>03 / VERIFY</b><h3>Rules stay visible</h3><p>Every result links back to both exchanges. Always compare the complete resolution criteria before acting.</p></article>
       </div>
     </section>
   </main>
-  <footer>Market Linker <span>Discovery only — not financial advice.</span></footer>
+  <footer><a class="brand" href="/"><span class="brand-mark"><i></i><i></i></span><strong>CROSSMARK</strong></a><p>Market discovery only. Not financial advice.</p><span>POLYMARKET US × KALSHI</span></footer>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

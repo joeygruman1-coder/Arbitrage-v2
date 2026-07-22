@@ -1,50 +1,67 @@
 let links = [];
+const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
-const volume = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
-function marketCard(market, exchange) {
-  return `<a class="market" href="${escapeHtml(market.url)}" target="_blank" rel="noopener noreferrer">
-    <div class="source ${exchange.toLowerCase()}"><i></i>${exchange}<span>OPEN ↗</span></div>
-    <h3>${escapeHtml(market.title)}</h3>
-    <p>${market.closeTime ? `Closes ${new Date(market.closeTime).toLocaleDateString()}` : 'Close date unavailable'} · ${volume.format(market.volume || 0)} volume</p>
+function price(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? `${Math.round(number * 100)}¢` : '—';
+}
+
+function market(marketData, exchange) {
+  const close = marketData.closeTime ? new Date(marketData.closeTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Open date';
+  return `<a class="market" href="${escapeHtml(marketData.url)}" target="_blank" rel="noopener noreferrer">
+    <div class="exchange ${exchange.toLowerCase().replace(' ', '-')}"><i></i><span>${exchange}</span><b>VIEW MARKET ↗</b></div>
+    <h3>${escapeHtml(marketData.title)}</h3>
+    <div class="market-meta"><span>YES <strong>${price(marketData.price)}</strong></span><span>VOL <strong>${compact.format(marketData.volume || 0)}</strong></span><span>CLOSE <strong>${close}</strong></span></div>
   </a>`;
 }
 
 function render() {
-  const filter = document.querySelector('#confidence').value;
-  const visible = links.filter((link) => filter === 'all' || link.status === filter);
-  document.querySelector('#links').innerHTML = visible.length ? visible.map((link) => `<article class="link-card">
-    <div class="score"><strong>${link.confidence}%</strong><span>${link.status === 'high' ? 'HIGH CONFIDENCE' : 'REVIEW'}</span></div>
-    <div class="pair">${marketCard(link.polymarket, 'Polymarket')}<div class="connector"><span>↔</span></div>${marketCard(link.kalshi, 'Kalshi')}</div>
-    <p class="reason">Why it was linked: ${escapeHtml(link.explanation)}</p>
-  </article>`).join('') : '<div class="empty">No links match this filter yet.</div>';
+  const confidence = $('#confidence').value;
+  const query = $('#search').value.trim().toLowerCase();
+  const visible = links.filter((link) => (confidence === 'all' || link.status === confidence) && (!query || `${link.polymarket.title} ${link.kalshi.title}`.toLowerCase().includes(query)));
+  $('#links').innerHTML = visible.length ? visible.map((link, index) => `<article class="link-card">
+    <div class="score"><small>#${String(index + 1).padStart(2, '0')}</small><div class="score-ring" style="--score:${link.confidence * 3.6}deg"><strong>${link.confidence}</strong><span>% FIT</span></div><b>${link.status === 'high' ? 'HIGH SIGNAL' : 'VERIFY'}</b></div>
+    <div class="pair">${market(link.polymarket, 'Polymarket US')}<div class="connector"><span>↔</span></div>${market(link.kalshi, 'Kalshi')}</div>
+    <p class="reason"><span>MATCH LOGIC</span>${escapeHtml(link.explanation)}</p>
+  </article>`).join('') : '<div class="empty"><strong>No matching contracts</strong><p>Try another search or confidence filter. A live scan may also surface new pairs.</p></div>';
+}
+
+function setSource(name, source = {}) {
+  $(`#${name}-state`).textContent = source.state === 'online' ? 'API ONLINE' : source.state === 'error' ? 'API ERROR' : 'SYNCING';
+  $(`#${name}-dot`).className = source.state || '';
 }
 
 async function load() {
   try {
     const response = await fetch('/api/links');
-    if (!response.ok) throw new Error('The local server did not respond.');
+    if (!response.ok) throw new Error('Local API unavailable');
     const data = await response.json();
     links = data.links || [];
-    document.querySelector('#poly-count').textContent = data.counts.polymarket.toLocaleString();
-    document.querySelector('#kalshi-count').textContent = data.counts.kalshi.toLocaleString();
-    document.querySelector('#link-count').textContent = links.length.toLocaleString();
-    document.querySelector('#status').textContent = data.scanning ? 'Scanning all open markets…' : data.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleTimeString()}` : 'Waiting for first scan…';
-    const notice = document.querySelector('#notice');
+    $('#poly-count').textContent = compact.format(data.counts.polymarket || 0);
+    $('#kalshi-count').textContent = compact.format(data.counts.kalshi || 0);
+    $('#link-count').textContent = compact.format(links.length);
+    $('#candidate-count').textContent = compact.format(data.counts.candidates || 0);
+    $('#status').textContent = data.scanning ? 'Catalog sync in progress…' : data.updatedAt ? `Last synced ${new Date(data.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Ready to scan';
+    setSource('poly', data.sources?.polymarket);
+    setSource('kalshi', data.sources?.kalshi);
+    const notice = $('#notice');
     notice.classList.toggle('hidden', !data.errors?.length);
-    notice.textContent = data.errors?.length ? `A source could not be read: ${data.errors.join(' · ')}` : '';
+    notice.innerHTML = data.errors?.length ? `<strong>Partial data</strong><span>${escapeHtml(data.errors.join(' · '))}</span>` : '';
     render();
   } catch (error) {
-    document.querySelector('#links').innerHTML = `<div class="empty">${escapeHtml(error.message)} Try refreshing this page.</div>`;
+    $('#links').innerHTML = `<div class="empty"><strong>Connection interrupted</strong><p>${escapeHtml(error.message)}. Refresh to reconnect.</p></div>`;
   }
 }
 
-document.querySelector('#confidence').addEventListener('change', render);
-document.querySelector('#scan').addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
+$('#confidence').addEventListener('change', render);
+$('#search').addEventListener('input', render);
+$('#scan').addEventListener('click', async ({ currentTarget }) => {
+  currentTarget.disabled = true;
   await fetch('/api/scan', { method: 'POST' });
   await load();
-  setTimeout(() => { event.currentTarget.disabled = false; load(); }, 2500);
+  setTimeout(() => { currentTarget.disabled = false; load(); }, 3000);
 });
 load();
 setInterval(load, 5000);
