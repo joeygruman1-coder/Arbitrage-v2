@@ -1,35 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findMatches, normalize, similarity } from '../matcher.js';
+import { findMatches, normalizeText, tokens } from '../matcher.js';
 
-test('normalizes common names and punctuation', () => {
-  assert.equal(normalize('Will Donald Trump win?'), 'will trump win');
+test('normalizes aliases, accents, and punctuation', () => {
+  assert.equal(normalizeText('Will Donald J. Trump win the U.S. election?'), 'will trump win the us election');
+  assert.deepEqual([...tokens('Who will win the election?')], ['win', 'election']);
 });
 
-test('scores equivalent markets above unrelated markets', () => {
-  const source = { title: 'Will Trump win the 2028 US presidential election?' };
-  const equivalent = { title: 'Trump to win the United States presidential election in 2028?' };
-  const unrelated = { title: 'Will rainfall in Seattle exceed 2 inches this week?' };
-  assert.ok(similarity(source, equivalent) > similarity(source, unrelated));
-});
-
-test('keeps the best matches first and respects the limit', () => {
-  const poly = [{ id: 'p1', title: 'Will Bitcoin reach $100000 in 2026?' }];
+test('links equivalent questions and rejects conflicting thresholds', () => {
+  const polymarket = [{ id: 'p1', title: 'Will Bitcoin be above $100000 in 2027?', description: 'Resolves yes above $100000.' }];
   const kalshi = [
-    { id: 'k1', title: 'Will Bitcoin hit $100000 before 2027?' },
-    { id: 'k2', title: 'Will the Knicks win tonight?' }
+    { id: 'k1', title: 'Will Bitcoin be over $100000 in 2027?', description: 'Yes above $100000.' },
+    { id: 'k2', title: 'Will Bitcoin be above $150000 in 2027?' },
   ];
-  const result = findMatches(poly, kalshi, 1);
-  assert.equal(result.length, 1);
-  assert.equal(result[0].kalshi.id, 'k1');
+  const result = findMatches(polymarket, kalshi, { minimumScore: 0.3 });
+  assert.equal(result.links.length, 1);
+  assert.equal(result.links[0].kalshi.id, 'k1');
 });
 
-test('does not score catalog entries with no shared meaningful keyword', () => {
-  const polymarket = [{ title: 'Will inflation fall below 2% in 2027?' }];
-  const kalshi = Array.from({ length: 5000 }, (_, index) => ({ title: `Movie ${index} wins an award` }));
-  kalshi.push({ title: 'Will inflation be below 2 percent in 2027?' });
+test('never links one market to more than one market', () => {
+  const polymarket = [
+    { id: 'p1', title: 'Will Trump win the 2028 US presidential election?' },
+    { id: 'p2', title: 'Trump to win the US presidential election in 2028?' },
+  ];
+  const kalshi = [
+    { id: 'k1', title: 'Will Trump win the 2028 United States presidential election?' },
+    { id: 'k2', title: 'Will Biden win the 2028 United States presidential election?' },
+  ];
+  const result = findMatches(polymarket, kalshi, { minimumScore: 0.3 });
+  assert.equal(result.links.length, 1);
+  assert.equal(new Set(result.links.map((link) => link.kalshi.id)).size, result.links.length);
+  assert.equal(new Set(result.links.map((link) => link.polymarket.id)).size, result.links.length);
+});
 
-  const matches = findMatches(polymarket, kalshi, 10);
-  assert.equal(matches.length, 1);
-  assert.match(matches[0].kalshi.title, /inflation/);
+test('does not pair unrelated markets that share only one word', () => {
+  const result = findMatches(
+    [{ id: 'p1', title: 'Will inflation fall below 2% in 2027?' }],
+    [{ id: 'k1', title: 'Will a movie win below deck award?' }],
+    { minimumScore: 0.1 },
+  );
+  assert.equal(result.links.length, 0);
 });

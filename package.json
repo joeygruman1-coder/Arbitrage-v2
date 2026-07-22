@@ -1,9 +1,9 @@
 {
-  "name": "market-twin",
-  "version": "2.2.0",
+  "name": "market-linker",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Guarded high-recall Kalshi and Polymarket US matcher.",
+  "description": "Read-only, one-to-one Polymarket and Kalshi market linker.",
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",

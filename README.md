@@ -1,92 +1,105 @@
-# Market Twin
+# Market Linker
 
-Market Twin continuously paginates through open markets from **Polymarket** and **Kalshi**, uses a keyword index to rank likely equivalents, and displays them in a local web dashboard. It evaluates both complementary hedge directions and separates pairs into over-$1, fee-blocked, and profitable-after-estimated-fees categories. It does **not** place trades.
+Market Linker is the first, read-only step toward a prediction-market arbitrage app. It repeatedly downloads the complete open catalogs from Polymarket and Kalshi, finds likely equivalent questions, and shows **one Polymarket market linked to one Kalshi market** in a local dashboard. It does not calculate arbitrage, connect a wallet, or place trades.
 
-## Start here (no coding experience required)
+## Clean replacement scope
+
+This branch uses the safe, reviewable cleanup approach: the former application code is deleted from the repository's **current version** and replaced by this focused linker. Only the files listed in [Commands and files](#commands-and-files) make up the application. GitHub will continue to retain earlier commits in repository history for audit and recovery; a normal pull request intentionally does not rewrite or destroy that history.
+
+## Beginner setup
 
 ### 1. Install Node.js
 
-Node.js is the program that runs this app. Download the current **LTS** version from [nodejs.org](https://nodejs.org), install it with the default choices, and then open Terminal (macOS) or PowerShell (Windows).
-
-Check that it worked:
+Node.js runs the app on your computer. Download the **LTS** installer from [nodejs.org](https://nodejs.org), accept its default choices, then open Terminal (macOS) or PowerShell (Windows). Check the installation:
 
 ```bash
 node --version
+npm --version
 ```
 
-You should see version 18 or higher.
+Node should report version 18 or newer.
 
-### 2. Download and open this project
+### 2. Open this project in a terminal
 
-Download the repository as a ZIP and unzip it. In Terminal, type `cd ` (including the space), drag the unzipped folder into the terminal window, and press Enter. Your command will look something like:
+Download this repository as a ZIP, unzip it, type `cd ` (with a trailing space) in Terminal, drag the unzipped folder into the window, and press Enter. For example:
 
 ```bash
 cd ~/Downloads/Arbitrage-v2
 ```
 
-### 3. Launch the app
+There are no third-party packages to install. The app uses only features included with Node.js.
 
-This version has no third-party packages, so there is nothing else to install. Run:
+### 3. Start the local website
 
 ```bash
 npm start
 ```
 
-Keep that terminal window open. Visit [http://localhost:3000](http://localhost:3000) in Chrome, Safari, or Edge. `localhost` means “this computer”—the app is not public on the internet. Stop it at any time by returning to Terminal and pressing **Control+C**.
+Keep that terminal open and visit [http://localhost:3000](http://localhost:3000). “Localhost” means the site is available only on your computer. Press **Control+C** in the terminal to stop it. Use `npm run dev` instead when editing; it restarts after file changes.
 
-For development, `npm run dev` automatically restarts the server after a code change.
+The first full scan can take a minute because the server follows every page of both public catalogs. It rescans every five minutes, and the **Scan now** button starts an immediate refresh.
 
-## What is an API key?
+## API keys, explained simply
 
-An API is a structured way for one app to request information from another. An **API key** is a secret password that identifies your app to a service. It can sometimes incur charges, so never paste it into a chat, commit it to Git, or put it in browser code.
+An API lets programs exchange structured data. An **API key** is a secret password identifying your program to an API. A key may grant access or create charges, so never paste one into chat, browser JavaScript, or GitHub.
 
-The market data used here is public, so **you do not need Polymarket or Kalshi keys** for this read-only prototype. The built-in matcher works without any key. An OpenAI key is optional and adds an AI review pass to the strongest candidate pairs.
+Polymarket and Kalshi expose the read-only market catalog data used here publicly, so **you need no exchange keys**. This prototype cannot trade.
 
-### Optional: enable OpenAI review
+### Optional AI review
 
-1. Create an API key in your OpenAI developer account and ensure API billing is enabled. A ChatGPT subscription and API billing are separate.
-2. In the project folder, duplicate `.env.example` and name the copy `.env`.
-3. Put the key after `OPENAI_API_KEY=`. Do not add spaces or quote marks.
-4. Load that private file before starting the app:
+The built-in matcher works without AI or any paid service. It creates a fast shortlist by comparing words, names, dates, numbers, percentages, and directions. You may optionally let an OpenAI model conservatively review the first 30 proposed pairs on each scan:
 
-   **macOS / Linux**
-   ```bash
-   set -a; source .env; set +a; npm start
-   ```
+1. Create an API key in the OpenAI developer platform and enable API billing. ChatGPT subscriptions and API billing are separate.
+2. Copy `.env.example` to a new file named `.env`.
+3. Add the key after `OPENAI_API_KEY=` in `.env`. Do not use quotes or spaces.
+4. Start with the private values loaded:
 
-   **Windows PowerShell**
-   ```powershell
-   $env:OPENAI_API_KEY=(Get-Content .env | Select-String 'OPENAI_API_KEY=').ToString().Split('=',2)[1]; npm start
-   ```
+**macOS / Linux**
 
-The `.gitignore` file prevents `.env` from being committed. If a key is ever exposed, revoke it immediately on the provider's dashboard and create a new one.
+```bash
+set -a; source .env; set +a; npm start
+```
+
+**Windows PowerShell**
+
+```powershell
+$line = Get-Content .env | Where-Object { $_ -like 'OPENAI_API_KEY=*' }
+$env:OPENAI_API_KEY = $line.Split('=', 2)[1]
+npm start
+```
+
+`.gitignore` excludes `.env`. If a key is exposed, revoke it immediately and generate another. AI calls cost money, can be wrong, and are not a substitute for reading both exchanges’ resolution rules.
 
 ## How matching works
 
-1. The server requests up to 100 currently open markets from each exchange's public API and caches results for five minutes.
-2. It standardizes titles and compares important words, proper names, categories, thresholds, years, and other numbers.
-3. Candidate pairs receive a confidence score and are ranked in the UI.
-4. When `OPENAI_API_KEY` is present, the strongest 20 candidates receive a conservative AI review that checks the event, subject, threshold, time window, and resolution meaning.
+1. **Collect:** the server paginates until each exchange says there are no more open markets, removes duplicate IDs, and repeats on a timer.
+2. **Shortlist:** a keyword index avoids comparing every possible pair.
+3. **Guard:** a candidate is rejected if numeric thresholds or directional words conflict. It must share at least two meaningful title words.
+4. **Rank:** title and description overlap produce a confidence score.
+5. **Link once:** candidates are considered from strongest to weakest; after either market is claimed, it cannot appear in another pair.
+6. **Review (optional):** an AI pass checks the proposition’s subject, threshold, time window, direction, and settlement meaning.
 
-Confidence is a research aid, not proof. Exchange resolution rules can differ even when titles look identical. A human should verify both contracts before this project is ever used for trading.
+The result is a suggestion, not proof. Similar titles can still have different deadlines, sources, edge cases, or settlement rules. Always open and read both contracts.
 
-## Useful commands
+## Commands and files
 
 | Command | Purpose |
 | --- | --- |
-| `npm start` | Run at `http://localhost:3000` |
-| `npm run dev` | Run and restart automatically after edits |
-| `npm test` | Run the automated matcher tests |
+| `npm start` | Start the dashboard at `http://localhost:3000` |
+| `npm run dev` | Start with automatic restart after edits |
+| `npm test` | Run matching safety tests |
 
-## Project map
+| File | Purpose |
+| --- | --- |
+| `server.js` | Public API pagination, background refresh, optional AI review, and web server |
+| `matcher.js` | Normalization, candidate scoring, conflict guards, and one-to-one selection |
+| `public/` | Local dashboard |
+| `test/` | Automated matcher tests |
 
-- `server.js` — local web server, exchange API adapters, caching, and optional AI review
-- `matcher.js` — fast first-pass candidate scoring
-- `public/` — dashboard HTML, CSS, and browser JavaScript
-- `test/` — automated matcher tests
+## Next steps (not implemented yet)
 
-## Current limitations and next steps
-
-- This is discovery, not a trading or arbitrage system.
-- Public API availability and exchange fields can change.
-- A production version should store reviewed links in a database, compare exact resolution rules and closing times, let a human approve/reject suggestions, and add price/spread tracking only after contract equivalence is verified.
+- Save human approvals and rejections in a database.
+- Compare complete resolution rules and closing times more deeply.
+- Add manual link/unlink controls and an audit history.
+- Only after equivalence is reliably verified, collect executable order books and calculate fee-aware arbitrage.
+- Add authentication and encrypted exchange credentials only when trading is intentionally introduced.
