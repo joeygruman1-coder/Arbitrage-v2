@@ -1,6 +1,6 @@
-# Market Linker
+# Crossmark
 
-Market Linker is the first, read-only step toward a prediction-market arbitrage app. It repeatedly downloads the complete open catalogs from Polymarket and Kalshi, finds likely equivalent questions, and shows **one Polymarket market linked to one Kalshi market** in a local dashboard. It does not calculate arbitrage, connect a wallet, or place trades.
+Crossmark is a read-only prediction-market intelligence dashboard. It repeatedly downloads the open catalogs from **Polymarket US** and Kalshi, finds likely equivalent questions, and shows **one Polymarket US contract linked to one Kalshi contract**. It does not connect a wallet or place trades.
 
 ## Clean replacement scope
 
@@ -43,7 +43,14 @@ The first full scan can take a minute because the server follows every page of b
 
 An API lets programs exchange structured data. An **API key** is a secret password identifying your program to an API. A key may grant access or create charges, so never paste one into chat, browser JavaScript, or GitHub.
 
-Polymarket and Kalshi expose the read-only market catalog data used here publicly, so **you need no exchange keys**. This prototype cannot trade.
+Polymarket US and Kalshi expose the read-only market catalog data used here publicly, so **you need no exchange keys**. This prototype cannot trade.
+
+The app uses the exchanges' documented public production endpoints:
+
+* `https://gateway.polymarket.us/v1/markets` — the Polymarket US gateway (not the international Gamma API). Its response is an object containing a `markets` array and uses `limit`/`offset` pagination.
+* `https://external-api.kalshi.com/trade-api/v2/markets` — Kalshi's recommended external Trade API host. Its response uses cursor pagination.
+
+Transient `429` and server responses are retried with exponential backoff, and catalog page requests are paced. For a proxy, mirror, or test fixture, set `POLYMARKET_API` or `KALSHI_API` to an alternate base URL before starting the server.
 
 ### Optional AI review
 
